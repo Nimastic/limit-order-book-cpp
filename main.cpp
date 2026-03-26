@@ -2,41 +2,52 @@
 
 int main() {
 
-    // ── Test 1: clean full match ──────────────────────────────────────────────
-    std::cout << "=== Test 1: full match ===\n";
+    // ── Test 1: cancel resting order ─────────────────────────────────────────
+    std::cout << "=== Test 1: cancel resting order ===\n";
     {
         OrderBook book;
-        book.addOrder({1, false, 10300, 100, 1000}); // sell 100 @ $103
-        book.addOrder({2, true,  10300, 100, 1001}); // buy  100 @ $103 → should match
-        book.printBook(); // book should be empty
+        book.addOrder({1, true,  10200, 100, 1000}); // bid rests
+        book.addOrder({2, true,  10100, 200, 1001}); // bid rests
+        book.printBook();                             // two bids visible
+
+        book.cancelOrder(1);                          // cancel order #1
+        book.printBook();                             // only order #2 visible
     }
 
-    // ── Test 2: partial fill ──────────────────────────────────────────────────
-    std::cout << "=== Test 2: partial fill ===\n";
+    // ── Test 2: cancelled order must never fill ───────────────────────────────
+    std::cout << "=== Test 2: cancelled order never fills ===\n";
     {
         OrderBook book;
-        book.addOrder({1, false, 10300,  60, 1000}); // sell  60 @ $103
-        book.addOrder({2, true,  10300, 100, 1001}); // buy  100 @ $103 → fills 60, 40 rests
-        book.printBook(); // should show bid 40 @ $103, ask side empty
+        book.addOrder({1, true, 10300, 100, 1000});  // bid rests
+        book.cancelOrder(1);                          // cancel it
+        book.addOrder({2, false, 10300, 100, 1001}); // sell arrives at same price
+        book.printBook();
+        // no trade should fire — order #1 is cancelled
+        // sell #2 should rest on ask side
     }
 
-    // ── Test 3: sweep multiple levels ─────────────────────────────────────────
-    std::cout << "=== Test 3: sweep multiple ask levels ===\n";
+    // ── Test 3: cancel non-existent order ────────────────────────────────────
+    std::cout << "=== Test 3: cancel non-existent ===\n";
     {
         OrderBook book;
-        book.addOrder({1, false, 10300,  80, 1000}); // sell  80 @ $103
-        book.addOrder({2, false, 10400, 150, 1001}); // sell 150 @ $104
-        book.addOrder({3, true,  10500, 300, 1002}); // buy  300 @ $105 → sweeps both
-        book.printBook(); // should show bid 70 @ $105 resting, asks empty
+        book.cancelOrder(99); // should print CANCEL FAILED, not crash
     }
 
-    // ── Test 4: no cross ─────────────────────────────────────────────────────
-    std::cout << "=== Test 4: no cross, orders rest ===\n";
+    // ── Test 4: cancel one of many orders at same level ──────────────────────
+    std::cout << "=== Test 4: cancel middle order at price level ===\n";
     {
         OrderBook book;
-        book.addOrder({1, false, 10400, 100, 1000}); // sell @ $104
-        book.addOrder({2, true,  10300, 100, 1001}); // buy  @ $103 → no cross
-        book.printBook(); // both sides should show their orders
+        book.addOrder({1, true, 10200, 100, 1000});
+        book.addOrder({2, true, 10200, 200, 1001}); // same price level
+        book.addOrder({3, true, 10200, 150, 1002}); // same price level
+        book.printBook();                            // total qty=450, orders=3
+
+        book.cancelOrder(2);                         // cancel middle one
+        book.printBook();                            // total qty=250, orders=2
+
+        // now send a sell that sweeps — should fill #1 and #3, skip #2
+        book.addOrder({4, false, 10000, 400, 1003});
+        book.printBook();
     }
 
     return 0;

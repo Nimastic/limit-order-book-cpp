@@ -4,10 +4,18 @@
 #include <unordered_map>
 #include <functional>
 #include <iostream>
+#include <vector>
 #include <algorithm>
 
 // namespace using std;
 // bad to use this in header files
+
+enum class OrderStatus { // scoped enumerations, strongly-typed, creating a named list of constants that belong to their own namespace
+    Open,
+    PartiallyFilled,
+    Filled,
+    Cancelled
+}; // why enum class > plain enum? solves name collisions (leaking name into scope) / solves implicit conversion to int 
 
 struct Order {
     int id;
@@ -15,6 +23,7 @@ struct Order {
     int price;
     int quantity;
     long long timestamp; // for time priority
+    OrderStatus status = OrderStatus::Open;
 
 };
 
@@ -29,6 +38,7 @@ class OrderBook {
 
 public:
     void addOrder(Order o);
+    bool cancelOrder(int orderId); // returns false if not found
     void printBook() const;
     const std::vector<Trade>& getTrades() const { return trades; }
 
@@ -49,4 +59,5 @@ private:
     void matchBuy(Order& buy);
     void matchSell(Order& sell);
     void recordTrade(int qty, int price, int buyId, int sellId);
+    void purgeCancelledFront(std::queue<Order>& q);
 };
