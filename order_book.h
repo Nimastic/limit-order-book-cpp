@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include <chrono>
+#include <climits> // for INT_MAX
 
 // namespace using std;
 // bad to use this in header files

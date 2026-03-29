@@ -136,6 +136,7 @@ void OrderBook::printBook() const {
     cout << "\n=== ASK SIDE (sellers) ===\n";
     // prints highest ask first 
     for (auto it = asks.rbegin(); it != asks.rend(); ++it) { // from the highest bid first we iterate down
+        if (it->first == INT_MAX) continue; // market order sentinel, skip display
         auto q = it->second; // get the queue
         int total = 0;
         int count = 0;
@@ -157,6 +158,8 @@ void OrderBook::printBook() const {
     // using [price, q] : bids] vs auto it = asks.rbegin(); it != asks.rend(); ++it has no performance difference
     
     for (auto& [price, q] : bids) {
+        if (price == 0) continue;  // market order sentinel, skip display
+        if (price == INT_MAX) continue; // market buy sentinel
         auto copy = q;
         int total = 0;
         int count = 0;
