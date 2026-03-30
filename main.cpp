@@ -4,58 +4,118 @@
 
 int main() {
 
-    // ── Test 1: market buy sweeps all asks ────────────────────────────────────
-    std::cout << "=== Test 1: market buy sweeps everything ===\n";
+    // ── ELO Test 1: sweep multiple price levels within 10 ticks, rest remainder ──
+    std::cout << "=== ELO: sweep and rest (within 10 ticks) ===\n";
     {
         OrderBook book;
-        book.addOrder({1, false, 10300, 100, now_ns()}); // ask $103
-        book.addOrder({2, false, 10400, 100, now_ns()}); // ask $104
-        book.addOrder({3, false, 10500, 100, now_ns()}); // ask $105
+        book.addOrder({1, false, 10300, 80,  now_ns()}); // ask 103.00
+        book.addOrder({2, false, 10304, 70,  now_ns()}); // ask 103.04
+        book.addOrder({3, false, 10308, 160, now_ns()}); // ask 103.08
 
-        // market buy — INT_MAX price, sweeps all three asks
-        book.addOrder({4, true, INT_MAX, 300, now_ns()});
+        // best ask = 10300
+        // ELO buy at 10309 is only 9 ticks above best ask -> allowed
+        // should sweep all 3 levels, total fill = 310, rest 90 on bid side
+        Order elo = {4, true, 10309, 400, now_ns(),
+                     OrderStatus::Open, OrderType::ELO};
+        book.addOrder(elo);
         book.printBook();
-        // expected: 3 trades fire at $103, $104, $105
-        // book empty after
     }
 
-    // ── Test 2: market sell sweeps all bids ───────────────────────────────────
-    std::cout << "=== Test 2: market sell sweeps everything ===\n";
+    // ── ELO Test 2: fully filled, nothing rests ───────────────────────────────
+    std::cout << "=== ELO: fully filled (within 10 ticks) ===\n";
     {
         OrderBook book;
-        book.addOrder({1, true, 10300, 100, now_ns()}); // bid $103
-        book.addOrder({2, true, 10200, 100, now_ns()}); // bid $102
-        book.addOrder({3, true, 10100, 100, now_ns()}); // bid $101
+        book.addOrder({1, false, 10300, 100, now_ns()});
+        book.addOrder({2, false, 10305, 100, now_ns()});
 
-        // market sell — price 0, sweeps all three bids
-        book.addOrder({4, false, 0, 300, now_ns()});
+        // best ask = 10300
+        // ELO buy at 10306 is 6 ticks above best ask -> allowed
+        // fills exactly 200, nothing rests
+        Order elo = {3, true, 10306, 200, now_ns(),
+                     OrderStatus::Open, OrderType::ELO};
+        book.addOrder(elo);
         book.printBook();
-        // expected: 3 trades fire at $103, $102, $101 (best price first)
-        // book empty after
     }
 
-    // ── Test 3: market buy partial — remainder rests but doesn't display ──────
-    std::cout << "=== Test 3: market buy partial fill ===\n";
+    // ── ELO Test 3: boundary reject at exactly 10 ticks with current code ─────
+    std::cout << "=== ELO: rejected at exactly 10 ticks ===\n";
     {
         OrderBook book;
-        book.addOrder({1, false, 10300, 100, now_ns()}); // ask $103 qty=100
+        book.addOrder({1, false, 10300, 100, now_ns()});
 
-        // market buy for 200 — only 100 available
-        book.addOrder({2, true, INT_MAX, 200, now_ns()});
+        // current code uses:
+        // if (o.price >= bestAsk + 10) reject;
+        // so 10310 is rejected
+        Order elo = {2, true, 10310, 100, now_ns(),
+                     OrderStatus::Open, OrderType::ELO};
+        book.addOrder(elo);
         book.printBook();
-        // expected: TRADE 100 @ $103
-        // remaining 100 of market buy rests but does NOT show in printBook
-        // book should appear empty (sentinel price filtered out)
     }
 
-    // ── Test 4: market order with no liquidity ────────────────────────────────
-    std::cout << "=== Test 4: market buy into empty book ===\n";
+    // ── SLO Test 1: remainder cancelled, not rested ───────────────────────────
+    std::cout << "=== SLO: remainder cancelled ===\n";
     {
         OrderBook book;
-        // no asks in the book
-        book.addOrder({1, true, INT_MAX, 100, now_ns()});
+        book.addOrder({1, false, 10300, 100, now_ns()}); // ask 103.00
+
+        // SLO is not subject to ELO tick-band validation
+        // fills 100, cancels remaining 200
+        Order slo = {2, true, 10500, 300, now_ns(),
+                     OrderStatus::Open, OrderType::SLO};
+        book.addOrder(slo);
         book.printBook();
-        // expected: no trades, book appears empty (sentinel filtered)
+    }
+
+    // ── SLO vs ELO same scenario, but use valid ELO price ─────────────────────
+    std::cout << "=== SLO vs ELO same scenario ===\n";
+    {
+        OrderBook book;
+        book.addOrder({1, false, 10300, 100, now_ns()});
+
+        // ELO buy is 5 ticks above best ask -> allowed
+        // fills 100, rests remaining 200
+        Order elo = {2, true, 10305, 300, now_ns(),
+                     OrderStatus::Open, OrderType::ELO};
+        book.addOrder(elo);
+        book.printBook();
+    }
+
+    // ── AON Test 1: enough liquidity — fills fully ────────────────────────────
+    std::cout << "=== AON: enough liquidity ===\n";
+    {
+        OrderBook book;
+        book.addOrder({1, false, 10300, 200, now_ns()});
+        book.addOrder({2, false, 10400, 200, now_ns()});
+
+        // AON buy 300 — 400 available, should fill
+        Order aon = {3, true, 10500, 300, now_ns(),
+                     OrderStatus::Open, OrderType::AON};
+        book.addOrder(aon);
+        book.printBook();
+    }
+
+    // ── AON Test 2: not enough liquidity — rejected entirely ──────────────────
+    std::cout << "=== AON: not enough liquidity ===\n";
+    {
+        OrderBook book;
+        book.addOrder({1, false, 10300, 100, now_ns()}); // only 100 available
+
+        Order aon = {2, true, 10500, 300, now_ns(),
+                     OrderStatus::Open, OrderType::AON};
+        book.addOrder(aon);
+        book.printBook();
+    }
+
+    // ── AON Test 3: book not touched on rejection ─────────────────────────────
+    std::cout << "=== AON: book untouched on rejection ===\n";
+    {
+        OrderBook book;
+        book.addOrder({1, false, 10300, 50, now_ns()});
+
+        Order aon = {2, true, 10300, 100, now_ns(),
+                     OrderStatus::Open, OrderType::AON};
+        book.addOrder(aon);
+        book.printBook();
     }
 
     return 0;

@@ -66,7 +66,7 @@ void OrderBook::matchBuy(Order& buy) {
         if (buy.price < best->first) break; // price doesn't cross, stop
 
         Order& sell = best->second.front(); // oldest order at this level
-        int fill = std::min(buy.quantity, sell.quantity);
+        int fill = min(buy.quantity, sell.quantity);
 
         recordTrade(fill, best->first, buy.id, sell.id);
 
@@ -100,7 +100,7 @@ void OrderBook::matchSell(Order& sell) {
         if (sell.price > best->first) break; // price doesn't cross, stop
 
         Order& buy = best->second.front();
-        int fill = std::min(sell.quantity, buy.quantity);
+        int fill = min(sell.quantity, buy.quantity);
 
         recordTrade(fill, best->first, buy.id, sell.id);
 
@@ -123,17 +123,93 @@ void OrderBook::matchSell(Order& sell) {
 // Public Interface
 
 void OrderBook::addOrder(Order o) {
+    // AON: check if fully fillable before touching book
+    if (o.type == OrderType::AON) {
+        int available = 0;
+        if (o.isBuy) {
+            for (auto& [price, q] : asks) {
+                if (price == 0 || price == INT_MAX ) continue;
+                if (o.price < price) break; // price doesnt cross
+                auto copy = q;
+                while (!copy.empty()) {
+                    if (copy.front().status != OrderStatus::Cancelled)
+                        available += copy.front().quantity;
+                    copy.pop();
+                }
+                if (available >= o.quantity) break; 
+            }
+        } else {
+            for (auto& [price, q] : bids) {
+                if (price == 0 || price == INT_MAX ) continue;
+                if (o.price > price) break; // price doesnt cross
+                auto copy = q;
+                while (!copy.empty()) {
+                    if (copy.front().status != OrderStatus::Cancelled)
+                        available += copy.front().quantity;
+                    copy.pop();
+                }
+                if (available >= o.quantity) break; 
+            }
+        }
+        if (available < o.quantity) {
+            cout << "AON REJECTED: order #" << o.id
+                      << " - only " << available
+                      << " available, need " << o.quantity << "\n";
+            o.status = OrderStatus::Cancelled;
+            return; // dont touch the book
+        }
+        // enough evailable, fall through to normal matching
+    }
+
+
+    // ELO: check if price is within 10 levels of best
+    if (o.type == OrderType::ELO) {
+        if (o.isBuy && !asks.empty()) {
+            int bestAsk = asks.begin() -> first; // get lowest ask rice
+            // reject if price is 10+ levels above the best ask
+            // using tick size of 1 cent = 1 unit for simplicity
+            if (o.price >= bestAsk + 10) {
+                cout << "ELO REJECTED: order #" << o.id
+                     << " price is too far from the best ask\n";
+                return;
+            }
+        }
+        if (!o.isBuy && !bids.empty()) { // is ask, and bids is not empty
+            int bestBid = bids.begin()->first; // get lowest bid
+            if (o.price <= bestBid - 10) {
+                cout << "ELO REJECTED: order #" << o.id
+                     << " price too far from best bid\n";
+                return;
+            }
+        }
+    }
+
+
     if (o.isBuy) { // if this order isbuy
         matchBuy(o);
         if (o.quantity > 0) {
-            bids[o.price].push(o); // rest remainder //  we put into buy map and push order into that price's queue
-            index[o.id] = &bids[o.price].back();
+            if (o.type == OrderType::SLO) {
+
+                cout << "SLO REMAINDER CANCELLED: order #" << o.id
+                    << " unfilled qty=" << o.quantity << "\n";
+                o.status = OrderStatus::Cancelled;
+
+            } else { // Limit, ELO, AON, Market all rest remainder
+                bids[o.price].push(o); // rest remainder //  we put into buy map and push order into that price's queue
+                index[o.id] = &bids[o.price].back();
+            }
         }
     } else {
         matchSell(o);
         if (o.quantity > 0) { 
-            asks[o.price].push(o);
-            index[o.id] = &asks[o.price].back();
+            if (o.type == OrderType::SLO) {
+                cout << "SLO REMAINDER CANCELLED: order #" << o.id
+                     << " unfilled qty=" << o.quantity << "\n";
+                o.status = OrderStatus::Cancelled;
+            } else {
+                asks[o.price].push(o);
+                index[o.id] = &asks[o.price].back();
+            }
         }
     }
 }
