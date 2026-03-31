@@ -304,7 +304,7 @@ These sit in front of the matching engine as a gate.
 [x] Layer 1 — Step 8: Timestamp time priority — verify FIFO within a price level
 [X] Layer 1 — Step 9: Market orders (INT_MAX for buy, 0 for sell)
 [X] Layer 1 — Step 10: Stress test (10,000 orders, assert no crossed book)
-[ ] Layer 1 ext: Multiple order types (ELO sweep, SLO cancel remainder, AON)
+[X] Layer 1 ext: Multiple order types (ELO sweep, SLO cancel remainder, AON)
 [ ] Layer 1 ext: Auction mode / IEP calculation (separate algorithm, not continuous)
 [ ] Layer 1.5 — Move semantics
       addOrder(Order o) → addOrder(Order&& o)
@@ -328,4 +328,133 @@ These sit in front of the matching engine as a gate.
 [ ] Roadmap — Feed subscriber / internal book replica (sequence validation, snapshot + incrementals)
 [ ] Roadmap — Pre-trade risk checks (position limits, fat-finger, credit checks)
 [ ] Roadmap — Pre-trade risk checks (position limits, fat-finger, credit checks)
+```
+
+
+```
+# Auction IEP Roadmap
+
+## 1. Auction mode / architecture
+- [ ] Add an auction mode separate from continuous matching
+- [ ] Make `addOrder()` branch by mode:
+  - [ ] Continuous mode → match immediately
+  - [ ] Auction mode → collect only, no immediate matching
+- [ ] Decide whether to use:
+  - [ ] Separate `AuctionEngine` class
+  - [ ] Or auction state inside `OrderBook`
+
+## 2. Auction order storage
+- [ ] Create auction bid-side storage
+- [ ] Create auction ask-side storage
+- [ ] Store orders by:
+  - [ ] price level
+  - [ ] FIFO queue within level
+- [ ] Reuse existing book structures where possible
+
+## 3. Order collection phase
+- [ ] Implement auction collection logic
+- [ ] Accept auction buy/sell limit orders
+- [ ] Insert into auction book
+- [ ] Do **not** call continuous `matchBuy()` / `matchSell()`
+- [ ] Decide whether cancel/modify is supported in v1
+
+## 4. Candidate price generation
+- [ ] Gather all distinct bid prices
+- [ ] Gather all distinct ask prices
+- [ ] Merge into one sorted candidate price list
+- [ ] Use only these prices for IEP evaluation
+
+## 5. IEP calculation
+- [ ] For each candidate price `p`, compute:
+  - [ ] `buyQty(p)` = total buy volume with `price >= p`
+  - [ ] `sellQty(p)` = total sell volume with `price <= p`
+  - [ ] `matchQty(p)` = `min(buyQty, sellQty)`
+  - [ ] `imbalance(p)` = `abs(buyQty - sellQty)`
+- [ ] Choose the price with:
+  - [ ] maximum `matchQty`
+  - [ ] then minimum `imbalance`
+  - [ ] then deterministic tie-break
+
+## 6. Tie-break rules
+- [ ] Define tie-break rules clearly
+- [ ] Recommended v1 rule:
+  - [ ] maximise executable volume
+  - [ ] minimise absolute imbalance
+  - [ ] choose price nearest reference price
+  - [ ] if still tied, choose lower price
+- [ ] Keep the rule deterministic and documented
+
+## 7. Auction result output
+- [ ] Store computed IEP
+- [ ] Store executable volume
+- [ ] Store buy/sell imbalance
+- [ ] Print or expose these values for debugging/tests
+
+## 8. Batch uncrossing
+- [ ] Implement uncross after IEP is chosen
+- [ ] Eligible buy orders: `price >= IEP`
+- [ ] Eligible sell orders: `price <= IEP`
+- [ ] Allocate fills using:
+  - [ ] better price first
+  - [ ] FIFO within same price
+- [ ] Execute all matched trades at **one common price**:
+  - [ ] the IEP
+
+## 9. Partial fills
+- [ ] Handle partially filled orders correctly
+- [ ] Reduce remaining quantity after execution
+- [ ] Mark fully filled orders
+- [ ] Leave unfilled remainder where appropriate
+
+## 10. Leftover order policy
+- [ ] Decide what happens after the auction:
+  - [ ] leftover orders move to continuous book
+  - [ ] or remain in auction book
+  - [ ] or get cancelled
+- [ ] Recommended v1:
+  - [ ] leftover limit orders carry into continuous book
+
+## 11. Edge cases
+- [ ] No crossing / no trade
+- [ ] One-sided book only
+- [ ] Multiple prices tie on max volume
+- [ ] Tie on max volume and imbalance
+- [ ] Partial fills at the clearing price
+- [ ] Empty book
+- [ ] Reference price tie-break case
+
+## 12. Testing roadmap
+- [ ] Test unique IEP case
+- [ ] Test tie on executable volume
+- [ ] Test tie broken by imbalance
+- [ ] Test tie broken by reference price
+- [ ] Test no-trade auction
+- [ ] Test partial fill at IEP
+- [ ] Test leftovers carried into continuous book
+- [ ] Test FIFO within same price level
+- [ ] Test better-price priority over same-price orders
+
+## 13. Recommended v1 scope
+- [ ] Limit orders only
+- [ ] No market orders yet
+- [ ] No advanced auction order types yet
+- [ ] Deterministic tie-break rules
+- [ ] Leftovers move to continuous book
+- [ ] Focus on correctness before optimisation
+
+## 14. Suggested implementation order
+- [ ] Build auction storage
+- [ ] Build collection-only mode
+- [ ] Build candidate price generation
+- [ ] Build `computeIEP()`
+- [ ] Build batch uncrossing
+- [ ] Build leftover carry-forward logic
+- [ ] Add tests
+- [ ] Refactor / optimise after correctness
+
+## 15. Core mental model
+- [ ] Continuous matching = match on arrival
+- [ ] Auction matching = collect first, compute one price, then batch match
+- [ ] Priority decides **who gets filled**
+- [ ] IEP decides **the price everyone trades at**
 ```

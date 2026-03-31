@@ -89,7 +89,8 @@ public:
      * @return true if marked cancelled; false if missing, filled, or already cancelled.
      * @note The slot may remain in its queue until the front; purgeCancelledFront removes it.
      */
-    bool cancelOrder(int orderId); // returns false if not found
+    [[nodiscard]] bool cancelOrder(int orderId); // returns false if not found
+    // [[nodiscard]] compiler hint that the return value of a function must not be silently ignored.
     /**
      * @brief Print aggregated bid/ask levels to stdout (skips display sentinels).
      */
@@ -117,13 +118,14 @@ public:
     /**
      * @brief Bid side: map from limit price to FIFO queue at that price (best bid = largest key).
      */
-    std::map<int, std::queue<Order>, std::greater<int>> bids;
+    std::map<int, std::deque<Order>, std::greater<int>> bids; // changed from queue to deque
     // asks: lowest price first
     // for this ask price, queue of Orders at this price (FIF0)
     /**
      * @brief Ask side: map from limit price to FIFO queue at that price (best ask = smallest key).
      */
-    std::map<int, std::queue<Order>> asks;
+    std::map<int, std::deque<Order>> asks; // change from queue to deque
+    // queue copies the entire queue at every price level during iterating
     
     // O(1) lookup by order id, needed for cancel later
     /**
@@ -158,5 +160,5 @@ public:
      * @brief Remove cancelled orders from the front of a price-level queue and drop them from index.
      * @param q Queue at one price level on bid or ask side.
      */
-    void purgeCancelledFront(std::queue<Order>& q);
+    void purgeCancelledFront(std::deque<Order>& q);
 };

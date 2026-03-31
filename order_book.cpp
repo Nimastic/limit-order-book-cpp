@@ -6,17 +6,22 @@ using namespace std; // no overhead to use this
 
 /** @copydoc OrderBook::purgeCancelledFront */
 // Remove cancelled order from the front of a queue, called before every match attempt so we dont accidentally fill a dead order
-void OrderBook::purgeCancelledFront(queue<Order>& q) {
+void OrderBook::purgeCancelledFront(deque<Order>& q) {
     while (!q.empty() && q.front().status == OrderStatus::Cancelled) {
         index.erase(q.front().id);
-        q.pop();
+        q.pop_front();
     }
 };
 
 /** @copydoc OrderBook::recordTrade */
 // Add trades to vector<Trade> trades;
 void OrderBook::recordTrade(int qty, int price, int buyId, int sellId) {
+    // trades.push_back({buyId, sellId, price, qty});
     trades.push_back({buyId, sellId, price, qty});
+    // push_back takes one object (T const& or T&&)
+    // emplace_back takes the constructor arguments for T (variadic template), then constructs T in-place
+    // Trade is an aggregate (no constructor)
+    // For aggregates, use emplace_back(Trade{a,b,c,d}) or just push_back({a,b,c,d}).
     cout << "TRADE: " << qty << " @ $" << price / 100.0 << " (buy#" << buyId << " x sell#" << sellId << ")\n";
 }
 
@@ -76,7 +81,7 @@ void OrderBook::matchBuy(Order& buy) {
         if (sell.quantity == 0) {
             sell.status = OrderStatus::Filled;
             index.erase(sell.id);
-            best->second.pop();
+            best->second.pop_front();
             if (best->second.empty()) asks.erase(best);
         } else {
             sell.status = OrderStatus::PartiallyFilled;
@@ -110,7 +115,7 @@ void OrderBook::matchSell(Order& sell) {
         if (buy.quantity == 0) {
             buy.status = OrderStatus::Filled;
             index.erase(buy.id);
-            best->second.pop();
+            best->second.pop_front();
             if (best->second.empty()) bids.erase(best);
         } else {
             buy.status = OrderStatus::PartiallyFilled;
@@ -130,11 +135,15 @@ void OrderBook::addOrder(Order o) {
             for (auto& [price, q] : asks) {
                 if (price == 0 || price == INT_MAX ) continue;
                 if (o.price < price) break; // price doesnt cross
-                auto copy = q;
-                while (!copy.empty()) {
-                    if (copy.front().status != OrderStatus::Cancelled)
-                        available += copy.front().quantity;
-                    copy.pop();
+                // auto copy = q;
+                // while (!copy.empty()) {
+                //     if (copy.front().status != OrderStatus::Cancelled)
+                //         available += copy.front().quantity;
+                //     copy.pop();
+                // }
+                for (const auto& ord : q) { // new deque implementation
+                    if (ord.status != OrderStatus::Cancelled)
+                        available += ord.quantity;
                 }
                 if (available >= o.quantity) break; 
             }
@@ -142,11 +151,15 @@ void OrderBook::addOrder(Order o) {
             for (auto& [price, q] : bids) {
                 if (price == 0 || price == INT_MAX ) continue;
                 if (o.price > price) break; // price doesnt cross
-                auto copy = q;
-                while (!copy.empty()) {
-                    if (copy.front().status != OrderStatus::Cancelled)
-                        available += copy.front().quantity;
-                    copy.pop();
+                // auto copy = q;
+                // while (!copy.empty()) {
+                //     if (copy.front().status != OrderStatus::Cancelled)
+                //         available += copy.front().quantity;
+                //     copy.pop();
+                // }
+                for (const auto& ord : q) { // new deque implementation
+                    if (ord.status != OrderStatus::Cancelled)
+                        available += ord.quantity;
                 }
                 if (available >= o.quantity) break; 
             }
@@ -195,7 +208,9 @@ void OrderBook::addOrder(Order o) {
                 o.status = OrderStatus::Cancelled;
 
             } else { // Limit, ELO, AON, Market all rest remainder
-                bids[o.price].push(o); // rest remainder //  we put into buy map and push order into that price's queue
+                // bids[o.price].push(o); // rest remainder //  we put into buy map and push order into that price's queue
+                // COPY - o is still alive but we dont need it anymore
+                bids[o.price].push_back(std::move(o));
                 index[o.id] = &bids[o.price].back();
             }
         }
@@ -207,7 +222,18 @@ void OrderBook::addOrder(Order o) {
                      << " unfilled qty=" << o.quantity << "\n";
                 o.status = OrderStatus::Cancelled;
             } else {
-                asks[o.price].push(o);
+                // asks[o.price].push(o);
+                asks[o.price].push_back(std::move(o));
+                // COPY - o is still alive but we dont need it anymore
+                // o is a named variable, and in C++ named variables are lvalues by default.
+                // So when you call:
+                // push(o) -> argument type is seen as lvalue -> binds to push(const T&) (copy overload)
+                // push(std::move(o)) -> std::move casts o to an rvalue (T&&) -> binds to push(T&&) (move overload)
+                // Copy path -> T(const T&) or operator=(const T&)
+                // Move path -> T(T&&) or operator=(T&&)
+                // Copy path: photocopy all papers into a new folder.
+                // Move path: hand over the folder reference and clear your label.
+
                 index[o.id] = &asks[o.price].back();
             }
         }
@@ -222,15 +248,18 @@ void OrderBook::printBook() const {
     // prints highest ask first 
     for (auto it = asks.rbegin(); it != asks.rend(); ++it) { // from the highest bid first we iterate down
         if (it->first == INT_MAX) continue; // market order sentinel, skip display
-        auto q = it->second; // get the queue
+        const auto& q = it->second; // get the queue
         int total = 0;
         int count = 0;
-        while (!q.empty()) { // while queue is not empty
-            if (q.front().status != OrderStatus::Cancelled) {
-                total += q.front().quantity;
-                count++;
-            }
-            q.pop();
+        // while (!q.empty()) { // while queue is not empty
+        //     if (q.front().status != OrderStatus::Cancelled) {
+        //         total += q.front().quantity;
+        //         count++;
+        //     }
+        //     q.pop();
+        // }
+        for (const auto& ord : q) { // new deque implementation
+            if (ord.status != OrderStatus::Cancelled) { total += ord.quantity; count++; }
         }
         if (count > 0) {
             cout << " $" << it->first / 100.0
@@ -245,15 +274,18 @@ void OrderBook::printBook() const {
     for (auto& [price, q] : bids) {
         if (price == 0) continue;  // market order sentinel, skip display
         if (price == INT_MAX) continue; // market buy sentinel
-        auto copy = q;
+        // auto copy = q;
         int total = 0;
         int count = 0;
-        while (!copy.empty()) {
-            if (copy.front().status != OrderStatus::Cancelled) {
-                total += copy.front().quantity;
-                count++;
-            }
-            copy.pop();
+        // while (!copy.empty()) {
+        //     if (copy.front().status != OrderStatus::Cancelled) {
+        //         total += copy.front().quantity;
+        //         count++;
+        //     }
+        //     copy.pop();
+        // }
+        for (const auto& ord : q) {
+            if (ord.status != OrderStatus::Cancelled) { total += ord.quantity; count++; }
         }
         if (count > 0) {
             cout << " $" << price / 100.0
