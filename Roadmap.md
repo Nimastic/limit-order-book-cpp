@@ -306,16 +306,16 @@ These sit in front of the matching engine as a gate.
 [X] Layer 1 — Step 10: Stress test (10,000 orders, assert no crossed book)
 [X] Layer 1 ext: Multiple order types (ELO sweep, SLO cancel remainder, AON)
 [ ] Layer 1 ext: Auction mode / IEP calculation (separate algorithm, not continuous)
-[ ] Layer 1.5 — Move semantics
+[X] Layer 1.5 — Move semantics
       addOrder(Order o) → addOrder(Order&& o)
       std::move when pushing into queues
       benchmark copy vs move with 100,000 orders
       (low real benefit until Order carries heap-allocated fields like std::string)
 [ ] Layer 2 — Stage 2a: cancelOrder() v2 — upgrade queue to std::list,
       store iterators in index for true O(1) cancel
+  [ ] Layer 2 — Stage 2d: Lock-free structures if going concurrent (skip list, atomics)
 [ ] Layer 2 — Stage 2b: Intrusive list + flat hashmap (cache-friendly, no malloc per order)
 [ ] Layer 2 — Stage 2c: Bit packing (compress order fields, fit more per cache line)
-[ ] Layer 2 — Stage 2d: Lock-free structures if going concurrent (skip list, atomics)
 [ ] Layer 2 — Profile first — measure before optimising, bottleneck is rarely where you think
 [ ] Layer 3 — Determinism audit (no wall-clock time in matching, no thread races)
 [ ] Layer 3 — Event log + sequence numbers (foundation for replication)
